@@ -10,6 +10,87 @@ from src.sim.wrapper_env import WrapperEnvConfig, WrapperEnv
 from src.sim.wrapper_env import get_grasps
 from src.test.load_test import load_test_data
 
+# For pose detection
+from src.utils import get_pc_from_rgbd, preprocess_pc_for_model
+from src.model.est_pose import EstPoseNet
+from src.model.est_coord import EstCoordNet
+from src.config import Config
+from transforms3d.quaternions import mat2quat, quat2mat
+from src.utils import to_pose,rot_dist,get_pc,get_workspace_mask
+import torch,cv2
+from src.constants import DEPTH_IMG_SCALE
+import traceback
+
+COORD_MODEL_DIR = "./models/est_coord/checkpoint_8000.pth"
+COORD_MODEL_DIR =""
+POSE_MODEL_DIR = "./models/est_pose/checkpoint_10000.pth"
+POSE_MODEL = None
+COORD_MODEL = None
+DEVICE = None
+# For pose detection
+import open3d as o3d
+import numpy as np
+
+def show_point_cloud(pc):
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pc)
+    o3d.visualization.draw_geometries([pcd])
+
+def load_models():
+    """
+    Load pre-trained pose estimation models
+    """
+    global POSE_MODEL, COORD_MODEL, DEVICE
+    
+    DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # Load EstPoseNet model
+    try:
+        POSE_MODEL = EstPoseNet(config=Config())
+        # pose_checkpoint = torch.load('/home/zhujl/Assignment2/exps/est_pose/checkpoint/checkpoint_10000.pth', 
+        #                            map_location=DEVICE)
+        pose_checkpoint = torch.load(POSE_MODEL_DIR, map_location=DEVICE)
+        POSE_MODEL.load_state_dict(pose_checkpoint['model'])
+        POSE_MODEL.to(DEVICE)
+        POSE_MODEL.eval()
+        print("Loaded EstPoseNet model")
+    except Exception as e:
+        print(f"Failed to load EstPoseNet: {e}")
+        POSE_MODEL = None
+    
+    # Load EstCoordNet model  
+    try:
+        COORD_MODEL = EstCoordNet(config=Config())
+        coord_checkpoint = torch.load(COORD_MODEL_DIR, map_location=DEVICE)
+        COORD_MODEL.load_state_dict(coord_checkpoint['model'])
+        COORD_MODEL.to(DEVICE)
+        COORD_MODEL.eval()
+        print("Loaded EstCoordNet model")
+    except Exception as e:
+        print(f"Failed to load EstCoordNet: {e}")
+        COORD_MODEL = None
+
+def move_wrist_camera_higher(env, delta_z=0.05):
+    """
+    让腕部摄像机在z轴方向升高 delta_z 米，并返回新的qpos
+    """
+    # 获取当前关节角
+    current_qpos = env.sim.humanoid_robot_cfg.joint_init_qpos[:7].copy()
+    # 获取当前 wrist camera 的笛卡尔位姿
+    robot_model = env.humanoid_robot_model
+    # wrist camera 通常是 link_eef 或 camera_cfg[1].link_name
+    camera_link = env.sim.humanoid_robot_cfg.camera_cfg[1].link_name
+    trans, rot = robot_model.fk_link(current_qpos, camera_link)
+    # 设置目标位姿
+    target_trans = trans.copy()
+    target_trans[1] += delta_z  # z轴升高
+    target_rot = rot.copy()     # 姿态可保持不变
+    # 用IK求解目标qpos
+    succ, target_qpos = robot_model.ik(trans=target_trans, rot=target_rot)
+    if not succ:
+        print("IK求解失败，无法升高腕部摄像机")
+        return None
+    return target_qpos
 
 def detect_driller_pose(img, depth, camera_matrix, camera_pose, *args, **kwargs):
     """
@@ -17,7 +98,116 @@ def detect_driller_pose(img, depth, camera_matrix, camera_pose, *args, **kwargs)
     """
     # implement the detection logic here
     # 
-    pose = np.eye(4)
+    global POSE_MODEL, COORD_MODEL, DEVICE
+    
+    # Load models if not already loaded
+    if POSE_MODEL is None and COORD_MODEL is None:
+        load_models()
+    try:
+        # Generate point cloud from RGB-D
+        # pc_camera, colors = get_pc_from_rgbd(img, depth, camera_matrix,depth_scale=1.0) # meter
+        # pc_camera = get_pc(depth,camera_matrix) 
+       
+        # # Transform to world coordinates for workspace filtering
+        # pc_world = (camera_pose[:3, :3] @ pc_camera.T + camera_pose[:3, 3:]).T
+        
+        # # Preprocess point cloud
+        # pc_processed = preprocess_pc_for_model(pc_camera, num_points=1024).astype(np.float32)
+        # # print(f"Processed point cloud shape: {pc_processed.shape}")
+        # if pc_processed is None:
+        #     print("Warning: Failed to preprocess point cloud")
+        #     print(f"Point cloud shape: {pc_camera.shape}")
+        #     print(f"depth min: {depth.min()}, max: {depth.max()}, mean: {depth.mean()}")
+        #     return np.eye(4)
+        
+        # # Convert to torch tensor
+        # pc_tensor = torch.from_numpy(pc_processed).float().unsqueeze(0).to(DEVICE)
+
+        # show_point_cloud(pc_camera)
+        # show_point_cloud(pc_tensor.cpu().numpy()[0])
+        cv2.imshow("rgb", img)
+        cv2.imwrite('rgb.png', img)
+        full_pc_camera = get_pc(
+            depth,camera_matrix
+        ) * np.array([-1, -1, 1])
+        # show_point_cloud(full_pc_camera)
+        full_pc_world = (
+            np.einsum("ab,nb->na", camera_pose[:3, :3], full_pc_camera)
+            + camera_pose[:3, 3]
+        )
+        # full_coord = np.einsum(
+        #     "ba,nb->na", obj_pose[:3, :3], full_pc_world - obj_pose[:3, 3]
+        # )
+
+        pc_mask = get_workspace_mask(full_pc_world)
+        # pc_mask = np.ones(full_pc_world.shape[0], dtype=bool)
+        
+        sel_pc_idx = np.random.randint(0, np.sum(pc_mask), 1024)
+
+        pc_camera = full_pc_camera[pc_mask][sel_pc_idx]
+        pc_tensor = torch.from_numpy(pc_camera).float().unsqueeze(0).to(DEVICE)
+        print(f"pc_tensor shape: {pc_tensor.shape}")
+        show_point_cloud(pc_camera)
+        # pc_mask = np.ones(full_pc_world.shape[0], dtype=bool)
+        
+        # Try EstCoordNet first (usually better performance)
+        if COORD_MODEL is not None:
+            try:
+                est_trans, est_rot = COORD_MODEL.est(pc_tensor)
+                est_trans = est_trans.cpu().numpy().squeeze()
+                est_rot = est_rot.cpu().numpy().squeeze()
+                
+                # Convert from camera frame to world frame
+                print(f"camera_pose: {camera_pose}")
+                print(f"est_rot: {est_rot}")
+                world_trans = camera_pose[:3, :3] @ est_trans + camera_pose[:3, 3]
+                world_rot = camera_pose[:3, :3] @ est_rot
+                
+                # Construct pose matrix
+                pose = np.eye(4)
+                pose[:3, :3] = world_rot
+                pose[:3, 3] = world_trans
+                
+                print("Used EstCoordNet for pose estimation")
+                print(f"Pose: {pose}")
+                return pose
+            except Exception as e:
+                traceback.print_exc()
+                print(f"EstCoordNet failed: {e}")
+        
+        # Fallback to EstPoseNet
+        if POSE_MODEL is not None:
+            try:
+                est_trans, est_rot = POSE_MODEL.est(pc_tensor)
+                est_trans = est_trans[0].cpu().numpy().squeeze()
+                est_rot = est_rot[0].cpu().numpy().squeeze()
+                
+                # Convert from camera frame to world frame
+                world_trans = camera_pose[:3, :3] @ est_trans + camera_pose[:3, 3]
+                world_rot = camera_pose[:3, :3] @ est_rot
+                
+                # Construct pose matrix
+                pose = np.eye(4)
+                pose[:3, :3] = world_rot
+                pose[:3, 3] = world_trans
+                print(f"camera_pose: {camera_pose}")
+                print(f"est_rot: {est_rot}")
+                print(f"est_trans: {est_trans}")
+                print("Used EstPoseNet for pose estimation")
+                print(f"Pose: {pose}")
+                return pose
+                
+            except Exception as e:
+                traceback.print_exc()
+                print(f"EstPoseNet failed: {e}")
+        
+        print("Warning: All models failed, returning identity pose")
+        return np.eye(4)
+        
+    except Exception as e:
+        traceback.print_exc()
+        print(f"Error in detect_pose: {e}")
+        return np.eye(4)
     return pose
 
 def detect_marker_pose(
@@ -93,7 +283,7 @@ def execute_plan(env: WrapperEnv, plan):
 
 TESTING = True
 DISABLE_GRASP = False
-DISABLE_MOVE = False
+DISABLE_MOVE = True
 
 def main():
     parser = argparse.ArgumentParser(description="Launcher config - Physics")
@@ -148,8 +338,15 @@ def main():
 
     env.step_env(humanoid_head_qpos=head_init_qpos)
     
-    observing_qpos = humanoid_init_qpos + np.array([0.01,0,0,0,0,0,0]) # you can customize observing qpos to get wrist obs
-    init_plan = plan_move_qpos(env, humanoid_init_qpos, observing_qpos, steps = 20)
+    observing_qpos = humanoid_init_qpos + np.array([0.01,0.6,0,0,0,0,0]) # you can customize observing qpos to get wrist obs
+    # target_qpos = move_wrist_camera_higher(env, delta_z=0.001) # move wrist camera higher to get better view
+    # print(f"target_qpos: {target_qpos}")
+    # print(env.sim.humanoid_robot_cfg.joint_init_qpos)
+    # print(env.sim.humanoid_robot_cfg.joint_names)
+    # return
+    # init_plan = plan_move_qpos(env, humanoid_init_qpos, observing_qpos, steps = 20) 
+    # original code seems wrong
+    init_plan = plan_move_qpos(observing_qpos, observing_qpos, steps=20)
     execute_plan(env, init_plan)
 
 
@@ -199,7 +396,8 @@ def main():
         obs_wrist = env.get_obs(camera_id=1) # wrist camera
         rgb, depth, camera_pose = obs_wrist.rgb, obs_wrist.depth, obs_wrist.camera_pose
         wrist_camera_matrix = env.sim.humanoid_robot_cfg.camera_cfg[1].intrinsics
-        driller_pose = detect_driller_pose(rgb, depth, wrist_camera_matrix, camera_pose[:3, 3])
+        print(f"wrist_camera_matrix: {wrist_camera_matrix}")
+        driller_pose = detect_driller_pose(rgb, depth, wrist_camera_matrix, camera_pose)
         # metric judgement
         Metric['obj_pose'] = env.metric_obj_pose(driller_pose)
 
