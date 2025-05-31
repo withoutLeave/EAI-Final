@@ -31,16 +31,16 @@ DEPTH_IMG_SCALE = 16384
 # )
 
 
-TABLE_HEIGHT = 0.7
+TABLE_HEIGHT = 0.72
 OBJ_INIT_TRANS = np.array([0.5, 0.3, 0.82])
 
-OBJ_RAND_RANGE = 0.1
-OBJ_RAND_SCALE = 0.02
+OBJ_RAND_RANGE = 0.3
+OBJ_RAND_SCALE = 0.03
 PC_MIN = np.array(
     [
         OBJ_INIT_TRANS[0] - OBJ_RAND_RANGE / 2,
         OBJ_INIT_TRANS[1] - OBJ_RAND_RANGE / 2,
-        0.75,
+        TABLE_HEIGHT + OBJ_RAND_SCALE,
     ]
 )
 
@@ -48,6 +48,6 @@ PC_MAX = np.array(
     [
         OBJ_INIT_TRANS[0] + OBJ_RAND_RANGE / 2,
         OBJ_INIT_TRANS[1] + OBJ_RAND_RANGE / 2,
-        0.85,
+        0.82,
     ]
 )

@@ -17,13 +17,14 @@ from src.model.est_coord import EstCoordNet
 from src.config import Config
 from transforms3d.quaternions import mat2quat, quat2mat
 from src.utils import to_pose,rot_dist,get_pc,get_workspace_mask
+from src import constants
 import torch,cv2
 from src.constants import DEPTH_IMG_SCALE
 import traceback
 
-COORD_MODEL_DIR = "./models/est_coord/checkpoint_8000.pth"
+COORD_MODEL_DIR = "./models/est_coord/checkpoint_1500.pth"
 COORD_MODEL_DIR =""
-POSE_MODEL_DIR = "./models/est_pose/checkpoint_10000.pth"
+POSE_MODEL_DIR = "./models/est_pose/checkpoint_5500.pth"
 POSE_MODEL = None
 COORD_MODEL = None
 DEVICE = None
@@ -125,7 +126,7 @@ def detect_driller_pose(img, depth, camera_matrix, camera_pose, *args, **kwargs)
 
         # show_point_cloud(pc_camera)
         # show_point_cloud(pc_tensor.cpu().numpy()[0])
-        cv2.imshow("rgb", img)
+        # cv2.imshow("rgb", img)
         cv2.imwrite('rgb.png', img)
         full_pc_camera = get_pc(
             depth,camera_matrix
@@ -147,7 +148,7 @@ def detect_driller_pose(img, depth, camera_matrix, camera_pose, *args, **kwargs)
         pc_camera = full_pc_camera[pc_mask][sel_pc_idx]
         pc_tensor = torch.from_numpy(pc_camera).float().unsqueeze(0).to(DEVICE)
         print(f"pc_tensor shape: {pc_tensor.shape}")
-        show_point_cloud(pc_camera)
+        # show_point_cloud(pc_camera)
         # pc_mask = np.ones(full_pc_world.shape[0], dtype=bool)
         
         # Try EstCoordNet first (usually better performance)
@@ -334,11 +335,18 @@ def main():
         'quad_return': False,
     }
     
-    head_init_qpos = np.array([0.0,0.0]) # you can adjust the head init qpos to find the driller
+    head_init_qpos = np.array([-0.25,0.12]) # you can adjust the head init qpos to find the driller
 
     env.step_env(humanoid_head_qpos=head_init_qpos)
-    
-    observing_qpos = humanoid_init_qpos + np.array([0.01,0.6,0,0,0,0,0]) # you can customize observing qpos to get wrist obs
+
+    # print("table_pose:", env.config.table_pose, type(env.config.table_pose))
+    TABLE_HEIGHT = float(env.config.table_pose[2][3])
+    constants.TABLE_HEIGHT = TABLE_HEIGHT
+    constants.PC_MIN[2] = TABLE_HEIGHT + constants.OBJ_RAND_SCALE
+    print(f"TABLE_HEIGHT: {constants.TABLE_HEIGHT}")
+    print(f"{constants.PC_MIN=}, {constants.PC_MAX=}")
+    observing_qpos = humanoid_init_qpos + np.array([0.01, 0., 0, 0., 0.2, 0.35, 0]) # you can customize observing qpos to get wrist obs
+    # observing_qpos = humanoid_init_qpos + np.array([0,0,0,0,0.15,0.15,0]) # you can customize observing qpos to get wrist obs
     # target_qpos = move_wrist_camera_higher(env, delta_z=0.001) # move wrist camera higher to get better view
     # print(f"target_qpos: {target_qpos}")
     # print(env.sim.humanoid_robot_cfg.joint_init_qpos)
@@ -348,7 +356,11 @@ def main():
     # original code seems wrong
     init_plan = plan_move_qpos(observing_qpos, observing_qpos, steps=20)
     execute_plan(env, init_plan)
-
+    # try:
+    #     while True:
+    #         pass
+    # except KeyboardInterrupt:
+    #     print("KeyboardInterrupt detected, exiting gracefully...")
 
     # --------------------------------------step 1: move quadruped to dropping position--------------------------------------
     if not DISABLE_MOVE:
