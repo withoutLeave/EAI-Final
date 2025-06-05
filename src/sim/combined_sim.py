@@ -85,6 +85,39 @@ class CombinedSim:
         self.physics = mjcf.Physics.from_mjcf_model(self.mjcf_root)
         self.mj_model = self.physics.model._model
         self.mj_data = self.physics.data._data
+
+        head_camera_body_id = self.physics.model.name2id("camera_body_head", "body")
+        wrist_camera_body_id = self.physics.model.name2id("camera_body_wrist", "body")
+        head_camera_mocap_id = self.physics.model.body_mocapid[head_camera_body_id]
+        wrist_camera_mocap_id = self.physics.model.body_mocapid[wrist_camera_body_id]
+        head_camera_id = self.physics.model.name2id("moving_cam_head", "camera")
+        wrist_camera_id = self.physics.model.name2id("moving_cam_wrist", "camera")
+        head_camera_joint_name = "head_camera_freejoint"
+        wrist_camera_joint_name = "wrist_camera_freejoint"
+
+        height_head_camera = self.humanoid_robot_cfg.camera_cfg[0].height
+        width_head_camera = self.humanoid_robot_cfg.camera_cfg[0].width
+        height_wrist_camera = self.humanoid_robot_cfg.camera_cfg[1].height
+        width_wrist_camera = self.humanoid_robot_cfg.camera_cfg[1].width
+
+        fovy_head_camera = (
+            2 * np.arctan(0.5 * height_head_camera / self.humanoid_robot_cfg.camera_cfg[0].intrinsics[1, 1])\
+                  * (180 / np.pi)
+        )  # in degrees
+        fovy_wrist_camera = (
+            2 * np.arctan(0.5 * height_wrist_camera / self.humanoid_robot_cfg.camera_cfg[1].intrinsics[1, 1])\
+                  * (180 / np.pi)
+        )
+        self.physics.model.cam_fovy[head_camera_id] = fovy_head_camera
+        self.physics.model.cam_fovy[wrist_camera_id] = fovy_wrist_camera
+
+        self.render_height = [height_head_camera, height_wrist_camera]
+        self.render_width = [width_head_camera, width_wrist_camera]
+
+        self.camera_body_ids = [head_camera_body_id, wrist_camera_body_id]
+        self.camera_ids = [head_camera_id, wrist_camera_id]
+        self.camera_joint_names = [head_camera_joint_name, wrist_camera_joint_name]
+        self.camera_mocap_ids = [head_camera_mocap_id, wrist_camera_mocap_id]
         # ctrl dof: 12+8
         # qpos dof: 19+20
         self.ctrl_humanoid_begin = 12
@@ -224,30 +257,45 @@ class CombinedSim:
         else:
             raise ValueError(f"Unsupported object type: {type(obj)}")
 
-    def render(self, render_cfg=None):
+    def render(self, camera_id=0, camera_pose=None):
         mode_kwargs = dict(
             rgb=dict(),
             depth=dict(depth=True),
             seg=dict(segmentation=True),
         )
-
-        if render_cfg is not None:
-            # self.physics.model.vis.global_.offwidth = render_cfg.width
-            # self.physics.model.vis.global_.offheight = render_cfg.height
-            renderer = MovableCamera(
-                self.physics, height=render_cfg.height, width=render_cfg.width
-            )
-            if render_cfg.fovy is not None:
-                renderer._physics.model.vis.global_.fovy = render_cfg.fovy
-            renderer.set_pose(
-                render_cfg.lookat,
-                render_cfg.distance,
-                np.rad2deg(render_cfg.azimuth),
-                np.rad2deg(render_cfg.elevation),
-            )
-        else:
-            renderer = self.renderer
-        return {k: renderer.render(**v).copy() for k, v in mode_kwargs.items()}
+        if camera_pose is not None:
+            if camera_id == 0:
+                print(camera_pose)
+            trans = camera_pose[:3, 3].copy()
+            self.mj_data.mocap_pos[self.camera_mocap_ids[camera_id]] = trans
+            quat = mat2quat(camera_pose[:3, :3].dot(np.diag([1,-1,-1])))
+            self.mj_data.mocap_quat[self.camera_mocap_ids[camera_id]] = quat
+            mujoco.mj_forward(self.mj_model, self.mj_data)
+        # if render_cfg is not None:
+        #     # self.physics.model.vis.global_.offwidth = render_cfg.width
+        #     # self.physics.model.vis.global_.offheight = render_cfg.height
+        #     renderer = MovableCamera(
+        #         self.physics, height=render_cfg.height, width=render_cfg.width
+        #     )
+        #     if render_cfg.fovy is not None:
+        #         renderer._physics.model.vis.global_.fovy = render_cfg.fovy
+        #     renderer.set_pose(
+        #         render_cfg.lookat,
+        #         render_cfg.distance,
+        #         np.rad2deg(render_cfg.azimuth),
+        #         np.rad2deg(render_cfg.elevation),
+        #     )
+        # else:
+        #     renderer = self.renderer
+        # return {k: renderer.render(**v).copy() for k, v in mode_kwargs.items()}
+        return {
+            k: self.physics.render(
+                height=self.render_height[camera_id],
+                width=self.render_width[camera_id],
+                camera_id=self.camera_ids[camera_id],
+                **v
+            ).copy() for k, v in mode_kwargs.items()
+        }
 
     def close(self):
         if not self.headless:
