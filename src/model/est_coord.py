@@ -596,31 +596,31 @@ class EstCoordNet(nn.Module):
                 R_list.append(R)
                 T_list.append(T)
 
-                # if b == 0 and False:
-                #     print("Visualizing sample 0...")
-                #     # Convert tensors to numpy arrays (move to CPU first)
-                #     pc_np = target_b.cpu().numpy()
-                #     pred_coords_np = src_b.cpu().numpy()
-                #     R_np = R.cpu().numpy()
-                #     T_np = T.cpu().numpy()
+                if b == 0 :
+                    print("Visualizing sample 0...")
+                    # Convert tensors to numpy arrays (move to CPU first)
+                    pc_np = target_b.cpu().numpy()
+                    pred_coords_np = src_b.cpu().numpy()
+                    R_np = R.cpu().numpy()
+                    T_np = T.cpu().numpy()
 
-                #     # Transform predicted coordinates back to camera frame using estimated R, T
-                #     # pc_aligned_np = (R_np @ pred_coords_np.T).T + T_np
-                #     # Correct matrix multiplication for (N, 3) points: R @ p^T requires p to be (3, N)
-                #     # Or directly: p @ R^T for p as (N, 3)
-                #     pc_aligned_np = pred_coords_np @ R_np.T + T_np
+                    # Transform predicted coordinates back to camera frame using estimated R, T
+                    # pc_aligned_np = (R_np @ pred_coords_np.T).T + T_np
+                    # Correct matrix multiplication for (N, 3) points: R @ p^T requires p to be (3, N)
+                    # Or directly: p @ R^T for p as (N, 3)
+                    pc_aligned_np = pred_coords_np @ R_np.T + T_np
 
 
-                #     # Create visualization objects
-                #     vis_list = []
-                #     vis_list.extend(Vis.pc(pc=pc_np, color='blue', size=2)) # Input PC (target)
-                #     vis_list.extend(Vis.pc(pc=pred_coords_np, color='red', size=2)) # Predicted Coords (source)
-                #     vis_list.extend(Vis.pc(pc=pc_aligned_np, color='green', size=2)) # Predicted Coords aligned to Input PC
-                #     vis_list.extend(Vis.pose(trans=T_np, rot=R_np, length=0.1)) # Estimated Pose
+                    # Create visualization objects
+                    vis_list = []
+                    vis_list.extend(Vis.pc(pc=pc_np, color='blue', size=2)) # Input PC (target)
+                    vis_list.extend(Vis.pc(pc=pred_coords_np, color='red', size=2)) # Predicted Coords (source)
+                    vis_list.extend(Vis.pc(pc=pc_aligned_np, color='green', size=2)) # Predicted Coords aligned to Input PC
+                    vis_list.extend(Vis.pose(trans=T_np, rot=R_np, length=0.1)) # Estimated Pose
 
-                #     # Show visualization
-                #     Vis.show(vis_list) # Opens in browser by default
-                #     # Or save to file: Vis.show(vis_list, path="output/vis_sample_0.html")    
+                    # Show visualization
+                    Vis.show(vis_list) # Opens in browser by default
+                    # Or save to file: Vis.show(vis_list, path="output/vis_sample_0.html")    
             R = torch.stack(R_list)  # Stack the rotation matrices
             T = torch.stack(T_list)  # Stack the translation vectors
         return T, R

@@ -9,7 +9,64 @@ from .type import Grasp
 from .constants import PC_MAX, PC_MIN
 import torch
 import torch.nn.functional as F
+import numpy as np
+from . import constants  # Make sure constants.py is accessible
 
+# If get_pc is in this file, keep it.
+# def get_pc(...):
+#    ...
+
+def get_workspace_mask_pose(
+    pc_world: np.ndarray,
+    table_pose: np.ndarray
+) -> np.ndarray:
+    """
+    Filters points based on X, Y AABB (from constants) and Z distance to the table plane.
+
+    Args:
+        pc_world (np.ndarray): Point cloud in world coordinates, shape (N, 3).
+        table_pose (np.ndarray): Pose of the table (4x4 matrix) in world coordinates.
+                                 Assumes table surface is its local XY plane (Z=0) and
+                                 its local Z-axis points "up" from the surface.
+
+    Returns:
+        np.ndarray: Boolean mask of shape (N,) indicating points within the workspace.
+    """
+    if pc_world.shape[0] == 0:
+        return np.array([], dtype=bool)
+
+    # 1. X and Y AABB filtering (using world coordinates from constants)
+    # These constants (PC_MIN, PC_MAX) are defined based on OBJ_INIT_TRANS and OBJ_RAND_RANGE.
+    # This defines a general area of interest in the XY plane.
+    mask_x = (pc_world[:, 0] >= constants.PC_MIN[0]) & (pc_world[:, 0] <= constants.PC_MAX[0])
+    mask_y = (pc_world[:, 1] >= constants.PC_MIN[1]) & (pc_world[:, 1] <= constants.PC_MAX[1])
+
+    # 2. Z filtering based on distance to the table plane
+    table_origin_world = table_pose[:3, 3]  # Origin of the table's frame in world
+    table_z_axis_world = table_pose[:3, 2]  # Z-axis of the table's frame in world (normal to surface)
+
+    # Calculate signed distance of each point to the table plane
+    # points_relative_to_table_origin = pc_world - table_origin_world  # Broadcasting if pc_world is (N,3)
+    # distances_to_plane = np.dot(points_relative_to_table_origin, table_z_axis_world)
+    
+    # More explicit broadcasting for clarity:
+    points_vec_from_table_origin = pc_world - table_origin_world.reshape(1, 3)
+    distances_to_plane = np.sum(points_vec_from_table_origin * table_z_axis_world.reshape(1, 3), axis=1)
+
+
+    # Define lower and upper bounds for the distance from the table plane
+    # constants.OBJ_RAND_SCALE is the clearance above the table surface (dynamically set in generate_pose.py)
+    lower_distance_bound = constants.OBJ_RAND_SCALE
+    
+    # Upper bound is the clearance + object's approximate height
+    upper_distance_bound = constants.OBJ_RAND_SCALE + constants.APPROX_OBJECT_MAX_HEIGHT
+
+    mask_z_plane = (distances_to_plane >= lower_distance_bound) & \
+                   (distances_to_plane <= upper_distance_bound)
+                   
+    final_mask = mask_x & mask_y & mask_z_plane
+    
+    return final_mask
 def to_pose(
     trans: Optional[np.ndarray] = None, rot: Optional[np.ndarray] = None
 ) -> np.ndarray:

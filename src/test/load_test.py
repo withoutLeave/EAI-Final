@@ -30,6 +30,7 @@ EXAMPLE_TEST_DATA = [
 
     TestData(
         table_trans = np.array([0.55, 0.45, 0.68]),
+        # table_trans = np.array([0.55, 0.45, 0.72]),
         table_size = np.array([0.68, 0.36, 0.02]),
         obj_trans = np.array([0.5, 0.4, 0.82]),
         obj_quat = np.array([0.924, 0.0, 0.0, -0.383]),

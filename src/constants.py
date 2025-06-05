@@ -36,6 +36,9 @@ OBJ_INIT_TRANS = np.array([0.5, 0.3, 0.82])
 
 OBJ_RAND_RANGE = 0.3
 OBJ_RAND_SCALE = 0.03
+
+APPROX_OBJECT_MAX_HEIGHT = 0.10
+
 PC_MIN = np.array(
     [
         OBJ_INIT_TRANS[0] - OBJ_RAND_RANGE / 2,

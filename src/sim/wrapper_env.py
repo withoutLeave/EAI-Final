@@ -96,7 +96,7 @@ class WrapperEnv:
             obj_pose = self.config.obj_pose
         else:
             obj_init_trans = np.array([0.5, 0.3, 0.82])
-            obj_init_trans[:2] += np.random.uniform(-0.02, 0.02, 2) * 0
+            obj_init_trans[:2] += np.random.uniform(-0.1, 0.1, 2)
             obj_pose = to_pose(obj_init_trans, rand_rot_mat())
         
         self.obj = get_obj(self.obj_name, obj_pose)
@@ -135,9 +135,9 @@ class WrapperEnv:
 
     def get_obs(self, camera_id: int = 1) -> Obs:
         """Get the observation from the simulation, camera_id = 0 for head camera, camera_id = 1 for wrist camera."""
-        init_qpos = self.humanoid_robot_cfg.joint_init_qpos.copy()
+        qpos = self.get_state()
         if camera_id == 1:
-            cam_trans, cam_rot = self.humanoid_robot_model.fk_camera(init_qpos, camera_id)
+            cam_trans, cam_rot = self.humanoid_robot_model.fk_camera(qpos, camera_id)
         elif camera_id == 0:
             cam_trans, cam_rot = self.humanoid_robot_model.fk_camera(self.sim.humanoid_head_qpos, camera_id)
         else:
@@ -161,7 +161,7 @@ class WrapperEnv:
         return obs
     
     def get_state(self) -> Dict:
-        humanoid_qpos = self.sim.mj_data.qpos[self.sim.humanoid_actuator_ids]
+        humanoid_qpos = self.sim.mj_data.qpos[self.sim.humanoid_joint_ids]
         return humanoid_qpos
 
     def step_env(
@@ -268,9 +268,7 @@ class WrapperEnv:
         dist_diff = np.linalg.norm(driller_pose[:3, 3] - obj_pose[:3, 3])
         rot_diff = driller_pose[:3, :3] @ obj_pose[:3, :3].T
         angle_diff = np.abs(np.arccos(np.clip((np.trace(rot_diff) - 1) / 2, -1, 1)))
-        # debug 
-        print(f'driller_pose: {driller_pose}')
-        print(f'dist_diff: {dist_diff}, angle_diff: {angle_diff}')
+        print(f"dist_diff: {dist_diff}, angle_diff: {angle_diff}")
         if dist_diff < 0.025 and angle_diff < 0.25:
             return True
         return False

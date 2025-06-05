@@ -93,7 +93,7 @@ class CombinedSim:
         # statistics
         for joint_id, joint in enumerate(self.mjcf_root.find_all("joint")):
             if joint.name in self.humanoid_robot_cfg.joint_names:
-                self.humanoid_joint_ids.append(joint_id)
+                self.humanoid_joint_ids.append(joint_id+6)
 
         for actuator_id, actuator in enumerate(self.mjcf_root.find_all("actuator")):
             if not 'left' in actuator.name:

@@ -16,14 +16,14 @@ from src.model.est_pose import EstPoseNet
 from src.model.est_coord import EstCoordNet
 from src.config import Config
 from transforms3d.quaternions import mat2quat, quat2mat
-from src.utils import to_pose,rot_dist,get_pc,get_workspace_mask
+from src.utils import to_pose,rot_dist,get_pc,get_workspace_mask,get_workspace_mask_pose
 from src import constants
 import torch,cv2
 from src.constants import DEPTH_IMG_SCALE
 import traceback
 
-COORD_MODEL_DIR = "./models/est_coord/checkpoint_1500.pth"
-COORD_MODEL_DIR =""
+COORD_MODEL_DIR = "./models/est_coord/checkpoint_8000.pth"
+# COORD_MODEL_DIR =""
 POSE_MODEL_DIR = "./models/est_pose/checkpoint_5500.pth"
 POSE_MODEL = None
 COORD_MODEL = None
@@ -93,7 +93,7 @@ def move_wrist_camera_higher(env, delta_z=0.05):
         return None
     return target_qpos
 
-def detect_driller_pose(img, depth, camera_matrix, camera_pose, *args, **kwargs):
+def detect_driller_pose(img, depth, camera_matrix, camera_pose, table_pose,*args, **kwargs):
     """
     Detects the pose of driller, you can include your policy in args
     """
@@ -140,7 +140,8 @@ def detect_driller_pose(img, depth, camera_matrix, camera_pose, *args, **kwargs)
         #     "ba,nb->na", obj_pose[:3, :3], full_pc_world - obj_pose[:3, 3]
         # )
 
-        pc_mask = get_workspace_mask(full_pc_world)
+        # pc_mask = get_workspace_mask(full_pc_world)
+        pc_mask = get_workspace_mask_pose(full_pc_world, table_pose)
         # pc_mask = np.ones(full_pc_world.shape[0], dtype=bool)
         
         sel_pc_idx = np.random.randint(0, np.sum(pc_mask), 1024)
@@ -335,18 +336,21 @@ def main():
         'quad_return': False,
     }
     
-    head_init_qpos = np.array([-0.25,0.12]) # you can adjust the head init qpos to find the driller
+    head_init_qpos = np.array([0.,0.12]) # you can adjust the head init qpos to find the driller
 
     env.step_env(humanoid_head_qpos=head_init_qpos)
 
     # print("table_pose:", env.config.table_pose, type(env.config.table_pose))
     TABLE_HEIGHT = float(env.config.table_pose[2][3])
-    constants.TABLE_HEIGHT = TABLE_HEIGHT
-    constants.PC_MIN[2] = TABLE_HEIGHT + constants.OBJ_RAND_SCALE
+    # constants.TABLE_HEIGHT = TABLE_HEIGHT
+    # constants.PC_MIN[2] = TABLE_HEIGHT + constants.OBJ_RAND_SCALE
     print(f"TABLE_HEIGHT: {constants.TABLE_HEIGHT}")
     print(f"{constants.PC_MIN=}, {constants.PC_MAX=}")
-    observing_qpos = humanoid_init_qpos + np.array([0.01, 0., 0, 0., 0.2, 0.35, 0]) # you can customize observing qpos to get wrist obs
-    # observing_qpos = humanoid_init_qpos + np.array([0,0,0,0,0.15,0.15,0]) # you can customize observing qpos to get wrist obs
+
+    obs_wrist = env.get_obs(camera_id=1) # wrist camera
+    print(f"wrist camera pose before: {obs_wrist.camera_pose}")
+    observing_qpos = humanoid_init_qpos + np.array([0.01, 0., 0.15,0. , 0., 0., 0.15]) # you can customize observing qpos to get wrist obs
+    # observing_qpos = humanoid_init_qpos + np.array([0.01,0,0,0,0.,0.,0]) # you can customize observing qpos to get wrist obs
     # target_qpos = move_wrist_camera_higher(env, delta_z=0.001) # move wrist camera higher to get better view
     # print(f"target_qpos: {target_qpos}")
     # print(env.sim.humanoid_robot_cfg.joint_init_qpos)
@@ -354,13 +358,12 @@ def main():
     # return
     # init_plan = plan_move_qpos(env, humanoid_init_qpos, observing_qpos, steps = 20) 
     # original code seems wrong
-    init_plan = plan_move_qpos(observing_qpos, observing_qpos, steps=20)
+    init_plan = plan_move_qpos(humanoid_init_qpos, observing_qpos, steps=20)
     execute_plan(env, init_plan)
-    # try:
-    #     while True:
-    #         pass
-    # except KeyboardInterrupt:
-    #     print("KeyboardInterrupt detected, exiting gracefully...")
+
+    for _ in range(5):
+        env.step_env()
+
 
     # --------------------------------------step 1: move quadruped to dropping position--------------------------------------
     if not DISABLE_MOVE:
@@ -405,11 +408,13 @@ def main():
 
     # --------------------------------------step 2: detect driller pose------------------------------------------------------
     if not DISABLE_GRASP:
+        table_pose = env.config.table_pose
         obs_wrist = env.get_obs(camera_id=1) # wrist camera
+        print(f"wrist camera pose after: {obs_wrist.camera_pose}")
         rgb, depth, camera_pose = obs_wrist.rgb, obs_wrist.depth, obs_wrist.camera_pose
         wrist_camera_matrix = env.sim.humanoid_robot_cfg.camera_cfg[1].intrinsics
         print(f"wrist_camera_matrix: {wrist_camera_matrix}")
-        driller_pose = detect_driller_pose(rgb, depth, wrist_camera_matrix, camera_pose)
+        driller_pose = detect_driller_pose(rgb, depth, wrist_camera_matrix, camera_pose,table_pose)
         # metric judgement
         Metric['obj_pose'] = env.metric_obj_pose(driller_pose)
 
