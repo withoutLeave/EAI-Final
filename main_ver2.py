@@ -48,7 +48,7 @@ from src.constants import DEPTH_IMG_SCALE
 import traceback
 from src.vis import Vis
 
-COORD_MODEL_DIR = "./models/est_coord/checkpoint_21500.pth"
+COORD_MODEL_DIR = "./models/est_coord/checkpoint_25000.pth"
 # COORD_MODEL_DIR =""
 POSE_MODEL_DIR = "./models/est_pose/checkpoint_5500.pth"
 POSE_MODEL = None
@@ -481,7 +481,7 @@ def main():
     
 
     # 移动手腕并拍照
-    observing_qpos = humanoid_init_qpos + np.array([0.01,0,0.20,0,0,0,0.15]) # you can customize observing qpos to get wrist obs
+    observing_qpos = humanoid_init_qpos + np.array([0.01,0,0.18,0,0,0,0.15]) # you can customize observing qpos to get wrist obs
     init_plan = plan_move_qpos(humanoid_init_qpos, observing_qpos)
     # execute_plan(env, init_plan,obj_pose=None,plan_type=4)
     execute_plan_for_pose(env, init_plan)
