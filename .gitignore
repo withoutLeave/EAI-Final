@@ -1,2 +1,4 @@
 data/*
 generate_pose.py
+output/*
+*.png

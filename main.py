@@ -21,21 +21,14 @@ from src import constants
 import torch,cv2
 from src.constants import DEPTH_IMG_SCALE
 import traceback
+from src.vis import Vis
 
-COORD_MODEL_DIR = "./models/est_coord/checkpoint_8000.pth"
+COORD_MODEL_DIR = "./models/est_coord/checkpoint_17500.pth"
 # COORD_MODEL_DIR =""
 POSE_MODEL_DIR = "./models/est_pose/checkpoint_5500.pth"
 POSE_MODEL = None
 COORD_MODEL = None
 DEVICE = None
-# For pose detection
-import open3d as o3d
-import numpy as np
-
-def show_point_cloud(pc):
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(pc)
-    o3d.visualization.draw_geometries([pcd])
 
 def load_models():
     """
@@ -71,27 +64,6 @@ def load_models():
         print(f"Failed to load EstCoordNet: {e}")
         COORD_MODEL = None
 
-def move_wrist_camera_higher(env, delta_z=0.05):
-    """
-    让腕部摄像机在z轴方向升高 delta_z 米，并返回新的qpos
-    """
-    # 获取当前关节角
-    current_qpos = env.sim.humanoid_robot_cfg.joint_init_qpos[:7].copy()
-    # 获取当前 wrist camera 的笛卡尔位姿
-    robot_model = env.humanoid_robot_model
-    # wrist camera 通常是 link_eef 或 camera_cfg[1].link_name
-    camera_link = env.sim.humanoid_robot_cfg.camera_cfg[1].link_name
-    trans, rot = robot_model.fk_link(current_qpos, camera_link)
-    # 设置目标位姿
-    target_trans = trans.copy()
-    target_trans[1] += delta_z  # z轴升高
-    target_rot = rot.copy()     # 姿态可保持不变
-    # 用IK求解目标qpos
-    succ, target_qpos = robot_model.ik(trans=target_trans, rot=target_rot)
-    if not succ:
-        print("IK求解失败，无法升高腕部摄像机")
-        return None
-    return target_qpos
 
 def detect_driller_pose(img, depth, camera_matrix, camera_pose, table_pose,*args, **kwargs):
     """
@@ -106,11 +78,11 @@ def detect_driller_pose(img, depth, camera_matrix, camera_pose, table_pose,*args
         load_models()
     try:
         # Generate point cloud from RGB-D
-        # pc_camera, colors = get_pc_from_rgbd(img, depth, camera_matrix,depth_scale=1.0) # meter
+        pc_camera, colors = get_pc_from_rgbd(img, depth, camera_matrix,depth_scale=1.0) # meter
         # pc_camera = get_pc(depth,camera_matrix) 
        
         # # Transform to world coordinates for workspace filtering
-        # pc_world = (camera_pose[:3, :3] @ pc_camera.T + camera_pose[:3, 3:]).T
+        pc_world = (camera_pose[:3, :3] @ pc_camera.T + camera_pose[:3, 3:]).T
         
         # # Preprocess point cloud
         # pc_processed = preprocess_pc_for_model(pc_camera, num_points=1024).astype(np.float32)
@@ -128,10 +100,16 @@ def detect_driller_pose(img, depth, camera_matrix, camera_pose, table_pose,*args
         # show_point_cloud(pc_tensor.cpu().numpy()[0])
         # cv2.imshow("rgb", img)
         cv2.imwrite('rgb.png', img)
-        full_pc_camera = get_pc(
-            depth,camera_matrix
-        ) * np.array([-1, -1, 1])
-        # show_point_cloud(full_pc_camera)
+        # full_pc_camera = get_pc(
+        #     depth,camera_matrix
+        # ) * np.array([-1, -1, 1])
+        # # show_point_cloud(full_pc_camera)
+        # full_pc_world = (
+        #     np.einsum("ab,nb->na", camera_pose[:3, :3], full_pc_camera)
+        #     + camera_pose[:3, 3]
+        # )
+        full_pc_camera = pc_camera
+        # full_pc_world = pc_world
         full_pc_world = (
             np.einsum("ab,nb->na", camera_pose[:3, :3], full_pc_camera)
             + camera_pose[:3, 3]
@@ -145,7 +123,15 @@ def detect_driller_pose(img, depth, camera_matrix, camera_pose, table_pose,*args
         # pc_mask = np.ones(full_pc_world.shape[0], dtype=bool)
         
         sel_pc_idx = np.random.randint(0, np.sum(pc_mask), 1024)
-
+        # plotly_list = []
+        # plotly_list += Vis.pc(
+        #     full_pc_world[pc_mask],
+        #     size=3,
+        #     color='blue',
+        # )
+        # plotly_list += Vis.pose(camera_pose[:3, 3], camera_pose[:3, :3], length=0.1)
+        # Vis.show(plotly_list, path="output/vis_sample_0.html") 
+        # Vis.show(plotly_list)
         pc_camera = full_pc_camera[pc_mask][sel_pc_idx]
         pc_tensor = torch.from_numpy(pc_camera).float().unsqueeze(0).to(DEVICE)
         print(f"pc_tensor shape: {pc_tensor.shape}")
@@ -347,9 +333,9 @@ def main():
     print(f"TABLE_HEIGHT: {constants.TABLE_HEIGHT}")
     print(f"{constants.PC_MIN=}, {constants.PC_MAX=}")
 
-    obs_wrist = env.get_obs(camera_id=1) # wrist camera
-    print(f"wrist camera pose before: {obs_wrist.camera_pose}")
-    observing_qpos = humanoid_init_qpos + np.array([0.01, 0., 0.15,0. , 0., 0., 0.15]) # you can customize observing qpos to get wrist obs
+
+    observing_qpos = humanoid_init_qpos + np.array([0.01, 0., 0.15, 0., 0., 0. , 0.15]) # you can customize observing qpos to get wrist obs
+    # observing_qpos = humanoid_init_qpos + np.array([0.01, 0., 0.,0., 0.35, 0., 0.]) # you can customize observing qpos to get wrist obs
     # observing_qpos = humanoid_init_qpos + np.array([0.01,0,0,0,0.,0.,0]) # you can customize observing qpos to get wrist obs
     # target_qpos = move_wrist_camera_higher(env, delta_z=0.001) # move wrist camera higher to get better view
     # print(f"target_qpos: {target_qpos}")
@@ -407,11 +393,13 @@ def main():
 
 
     # --------------------------------------step 2: detect driller pose------------------------------------------------------
-    if not DISABLE_GRASP:
+    if not DISABLE_GRASP:      
         table_pose = env.config.table_pose
         obs_wrist = env.get_obs(camera_id=1) # wrist camera
         print(f"wrist camera pose after: {obs_wrist.camera_pose}")
         rgb, depth, camera_pose = obs_wrist.rgb, obs_wrist.depth, obs_wrist.camera_pose
+        print(f'camera_pose: {camera_pose}')
+        # return
         wrist_camera_matrix = env.sim.humanoid_robot_cfg.camera_cfg[1].intrinsics
         print(f"wrist_camera_matrix: {wrist_camera_matrix}")
         driller_pose = detect_driller_pose(rgb, depth, wrist_camera_matrix, camera_pose,table_pose)

@@ -246,6 +246,7 @@ def get_pc_from_rgbd(rgb, depth, intrinsics, depth_scale=1000.0):
     
     # Filter out invalid depth values
     valid_mask = (depth_flat > 0.01) & (depth_flat < 10.0)
+    # valid_mask = depth_flat > 0
     u = u[valid_mask]
     v = v[valid_mask]
     depth_flat = depth_flat[valid_mask]
