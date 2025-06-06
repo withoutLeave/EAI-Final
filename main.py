@@ -334,7 +334,7 @@ def main():
     print(f"{constants.PC_MIN=}, {constants.PC_MAX=}")
 
 
-    observing_qpos = humanoid_init_qpos + np.array([0.01, 0., 0.15, 0., 0., 0. , 0.15]) # you can customize observing qpos to get wrist obs
+    observing_qpos = humanoid_init_qpos + np.array([0.01, 0., 0.25, 0., 0., 0. , 0.15]) # you can customize observing qpos to get wrist obs
     # observing_qpos = humanoid_init_qpos + np.array([0.01, 0., 0.,0., 0.35, 0., 0.]) # you can customize observing qpos to get wrist obs
     # observing_qpos = humanoid_init_qpos + np.array([0.01,0,0,0,0.,0.,0]) # you can customize observing qpos to get wrist obs
     # target_qpos = move_wrist_camera_higher(env, delta_z=0.001) # move wrist camera higher to get better view

@@ -264,6 +264,17 @@ def is_desired_qpos_for_post_grasp(qpos_arr: np.ndarray) -> bool:
 
     return cond1 and cond2 and cond3 and cond6 and cond7
 
+def is_desired_qpos_for_post_grasp1(qpos_arr: np.ndarray) -> bool:
+    # ... (维度检查不变)
+
+    
+    cond1 = (qpos_arr[0] >= -1.0) and (qpos_arr[0] <= -0.2)
+    cond3 = (qpos_arr[2] >= -0.5) and (qpos_arr[2] <= 0.5)
+    cond2 = (qpos_arr[1] >= -1.2) and (qpos_arr[2] <= 0.8) # cond2 保持不变
+    cond6 = (qpos_arr[5] >= -0.5) and (qpos_arr[5] <= 0.5) # cond6 保持不变
+    cond7 = qpos_arr[6] < 0                               # cond7 保持不变
+
+    return cond1 and cond2 and cond3 and cond6 and cond7
 def plan_grasp(env: WrapperEnv, grasp: Grasp, grasp_config, *args, **kwargs) -> Optional[List[np.ndarray]]:
     """Try to plan a grasp trajectory for the given grasp. The trajectory is a list of joint positions. Return None if the trajectory is not valid."""
     robot_cfg = get_robot_cfg("galbot")
@@ -295,7 +306,7 @@ def plan_grasp(env: WrapperEnv, grasp: Grasp, grasp_config, *args, **kwargs) -> 
 
     '''对轨迹的加强'''
     final_grasp_qpos = traj[-1] # check final qpos
-    if not is_desired_qpos_for_post_grasp(final_grasp_qpos):
+    if not is_desired_qpos_for_post_grasp1(final_grasp_qpos):
         print(f"The grasp plan is not good: because a loop is included!")
         return None # 返回 None，指示这个轨迹不合格 """
     
@@ -413,9 +424,9 @@ def main():
     parser.add_argument("--robot", type=str, default="galbot")
     parser.add_argument("--obj", type=str, default="power_drill")
     parser.add_argument("--ctrl_dt", type=float, default=0.02)
-    parser.add_argument("--headless", type=int, default=1) # 暂时不显式
+    parser.add_argument("--headless", type=int, default=0) # 暂时不显式
     parser.add_argument("--reset_wait_steps", type=int, default=100)
-    parser.add_argument("--test_id", type=int, default=0)
+    parser.add_argument("--test_id", type=int, default=2)
     parser.add_argument("--try_plan_num", type=int, default=3) # for each grasp, find ik
 
     args = parser.parse_args()
@@ -633,8 +644,12 @@ def main():
     if not DISABLE_GRASP:
         print("*"*80,"\nStage 3: grasp and lift task begin")
         # 预先设置：
+        print("The driller pose is ", driller_pose)
+        print("The driller pose is ", T_to_pose7d(driller_pose))
         obj_pose = driller_pose.copy()
-        obj_pose = env.get_driller_pose()
+        obj_pose1 = env.get_driller_pose()
+        print(f"Object pose in the simulation is {obj_pose1}!") 
+        print(f"Object pose in the simulation is {T_to_pose7d(obj_pose1)}!")
         print(f"Object pose is {T_to_pose7d(obj_pose)}!")
         grasps = get_grasps(args.obj)  # 得到了 8 个 grasp
 
@@ -644,7 +659,7 @@ def main():
         # grasps[0] 应该是可以成功的
         est_trans = obj_pose[:3,3]
         est_rot = obj_pose[:3,:3]
-
+        est_trans[2] -= 0.05 # 让它更低一点，夹得更稳
         grasp_config = dict( 
             reach_steps=20,
             delta_dist=0.01
@@ -696,7 +711,7 @@ def main():
             [ -0.6, -1.5842,  -0.7, -1.4229, -0.9842, -0.2657, -0.5892],
         ])
 
-        def interpolate_joint_trajectory(traj, num_interp=5):
+        def interpolate_joint_trajectory(traj, num_interp=10):
             """
             对机械臂的关节角度序列进行线性插值，每对相邻帧之间插入若干中间帧。
             """
