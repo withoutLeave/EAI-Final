@@ -51,14 +51,15 @@ from src.model.est_pose import EstPoseNet
 from src.model.est_coord import EstCoordNet
 from src.config import Config
 from transforms3d.quaternions import mat2quat, quat2mat
-from src.utils import to_pose,rot_dist,get_pc,get_workspace_mask,get_workspace_mask_pose
+from src.utils import to_pose,rot_dist,get_pc,get_workspace_mask,get_workspace_mask_pose,get_workspace_mask_height
 import torch,cv2
 from src.constants import DEPTH_IMG_SCALE
 import traceback
 from src.vis import Vis
 
 COORD_MODEL_DIR = "./models/est_coord/checkpoint_21500.pth"
-POSE_MODEL_DIR = "./models/est_pose/checkpoint_5500.pth"
+COORD_MODEL_DIR = None
+POSE_MODEL_DIR = "./models/est_pose/checkpoint_24000.pth"
 POSE_MODEL = None
 COORD_MODEL = None
 DEVICE = None
@@ -100,7 +101,7 @@ def load_models():
         COORD_MODEL = None
 
 
-def detect_driller_pose(img, depth, camera_matrix, camera_pose, table_pose,*args, **kwargs):
+def detect_driller_pose(img, depth, camera_matrix, camera_pose, *args, **kwargs):
     """
     Detects the pose of driller, you can include your policy in args
     """
@@ -126,7 +127,8 @@ def detect_driller_pose(img, depth, camera_matrix, camera_pose, table_pose,*args
             + camera_pose[:3, 3]
         )
 
-        pc_mask = get_workspace_mask_pose(full_pc_world, table_pose)
+        # pc_mask = get_workspace_mask_pose(full_pc_world, table_pose)
+        pc_mask = get_workspace_mask_height(full_pc_world)
         # pc_mask = np.ones(full_pc_world.shape[0], dtype=bool)
         
         sel_pc_idx = np.random.randint(0, np.sum(pc_mask), 1024)
@@ -424,7 +426,7 @@ def main():
     parser.add_argument("--robot", type=str, default="galbot")
     parser.add_argument("--obj", type=str, default="power_drill")
     parser.add_argument("--ctrl_dt", type=float, default=0.02)
-    parser.add_argument("--headless", type=int, default=0) # 暂时不显式
+    parser.add_argument("--headless", type=int, default=1) # 暂时不显式
     parser.add_argument("--reset_wait_steps", type=int, default=100)
     parser.add_argument("--test_id", type=int, default=2)
     parser.add_argument("--try_plan_num", type=int, default=3) # for each grasp, find ik
@@ -477,7 +479,7 @@ def main():
 
     # observing_qpos = humanoid_init_qpos + np.array([0.01,0,0.40,0,0,0,0.15])
     # 移动手腕并拍照
-    observing_qpos = humanoid_init_qpos + np.array([0.01,0,0.25,0,0,0,0.15]) # you can customize observing qpos to get wrist obs
+    observing_qpos = humanoid_init_qpos + np.array([0.01,0,0.20,0,0,0,0.15]) # you can customize observing qpos to get wrist obs
 
     grasp_init_qpos = humanoid_init_qpos + np.array([0.01,0,0.15,0,0,0,0.15])
     init_plan = plan_move_qpos(humanoid_init_qpos, observing_qpos)
@@ -635,8 +637,8 @@ def main():
 
         rgb, depth, camera_pose = pred_wrist_obs.rgb, pred_wrist_obs.depth, pred_wrist_obs.camera_pose
         wrist_camera_matrix = env.sim.humanoid_robot_cfg.camera_cfg[1].intrinsics
-        table_pose = env.config.table_pose
-        driller_pose = detect_driller_pose(rgb, depth, wrist_camera_matrix, camera_pose,table_pose)
+        # table_pose = env.config.table_pose
+        driller_pose = detect_driller_pose(rgb, depth, wrist_camera_matrix, camera_pose)
         # metric judgement
         Metric['obj_pose'] = env.metric_obj_pose(driller_pose)
 

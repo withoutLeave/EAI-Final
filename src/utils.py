@@ -12,9 +12,39 @@ import torch.nn.functional as F
 import numpy as np
 from . import constants  # Make sure constants.py is accessible
 
-# If get_pc is in this file, keep it.
-# def get_pc(...):
-#    ...
+
+def get_workspace_mask_height(
+    pc_world: np.ndarray,
+    z_percentile_threshold: float = 85,
+    height_above_table: float = 0.02,
+    max_height_above_table: float = 0.10,
+    min_object_points: int = 50
+) -> np.ndarray:
+    """
+    仅基于高度统计分割物体点，不用DBSCAN
+    """
+    if pc_world.shape[0] == 0:
+        return np.array([], dtype=bool)
+    # 1. 估计桌面高度
+    print(f"len(pc_world): {len(pc_world)}")
+    table_height = np.percentile(pc_world[:, 2], z_percentile_threshold) 
+    print(f"Estimated table height: {table_height:.3f} m")
+    # 2. 基于高度过滤
+    height_diff = pc_world[:, 2] - table_height
+    object_mask = (height_diff >= height_above_table) & (height_diff <= max_height_above_table)
+    # 3. 可选：XY范围过滤
+    if hasattr(constants, 'PC_MIN') and hasattr(constants, 'PC_MAX'):
+        xy_mask = (
+            (pc_world[:, 0] >= constants.PC_MIN[0]) & 
+            (pc_world[:, 0] <= constants.PC_MAX[0]) &
+            (pc_world[:, 1] >= constants.PC_MIN[1]) & 
+            (pc_world[:, 1] <= constants.PC_MAX[1])
+        )
+        object_mask = object_mask & xy_mask
+    # 4. 确保有足够的点
+    if np.sum(object_mask) < min_object_points:
+        return np.zeros(len(pc_world), dtype=bool)
+    return object_mask
 
 def get_workspace_mask_pose(
     pc_world: np.ndarray,
