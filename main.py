@@ -18,7 +18,7 @@ from src.config import Config
 from transforms3d.quaternions import mat2quat, quat2mat
 from src.utils import to_pose,rot_dist,get_pc,get_workspace_mask,get_workspace_mask_pose,get_workspace_mask_height
 from src import constants
-
+from src.utils import ransac_plane_fit
 import torch,cv2
 from src.constants import DEPTH_IMG_SCALE
 import traceback
@@ -121,10 +121,14 @@ def detect_driller_pose(img, depth, camera_matrix, camera_pose, table_pose,*args
 
         # pc_mask = get_workspace_mask(full_pc_world)
         # pc_mask = get_workspace_mask_pose(full_pc_world, table_pose)
-        pc_mask = get_workspace_mask_height(full_pc_world)
+        # pc_mask = get_workspace_mask_height(full_pc_world)
         # pc_mask = get_workspace_mask_histogram(full_pc_world)
         # pc_mask = np.ones(full_pc_world.shape[0], dtype=bool)
-        
+        plane_normal, plane_point, inlier_mask = ransac_plane_fit(full_pc_world)
+        distances = np.dot(full_pc_world - plane_point, plane_normal)
+        height_above_table = 0.02
+        max_height_above_table = 0.12
+        pc_mask = (distances > height_above_table) & (distances < max_height_above_table)
         sel_pc_idx = np.random.randint(0, np.sum(pc_mask), 1024)
         # plotly_list = []
         # plotly_list += Vis.pc(

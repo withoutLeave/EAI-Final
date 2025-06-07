@@ -12,7 +12,69 @@ import torch.nn.functional as F
 import numpy as np
 from . import constants  # Make sure constants.py is accessible
 
+def ransac_plane_fit(pc, max_trials=100, distance_threshold=0.01, min_inliers=100):
+    """
+    手动实现RANSAC平面拟合
+    Args:
+        pc: (N, 3) 点云
+        max_trials: 迭代次数
+        distance_threshold: 内点判定距离阈值（单位：米）
+        min_inliers: 最小内点数
+    Returns:
+        best_normal: (3,) 法向量（单位向量）
+        best_point: (3,) 平面上一点
+        best_inlier_mask: (N,) bool 内点mask
+    """
+    N = pc.shape[0]
+    best_inlier_count = 0
+    best_normal = None
+    best_point = None
+    best_inlier_mask = None
 
+    for _ in range(max_trials):
+        # 随机采样3个点
+        idx = np.random.choice(N, 3, replace=False)
+        p1, p2, p3 = pc[idx]
+
+        # 计算法向量
+        v1 = p2 - p1
+        v2 = p3 - p1
+        normal = np.cross(v1, v2)
+        norm = np.linalg.norm(normal)
+        if norm < 1e-6:
+            continue  # 三点共线，跳过
+        normal = normal / norm
+
+        # 平面方程: normal·(x - p1) = 0
+        # 计算所有点到该平面的距离
+        distances = np.abs((pc - p1) @ normal)
+
+        # 统计内点
+        inlier_mask = distances < distance_threshold
+        inlier_count = np.sum(inlier_mask)
+
+        # 更新最优
+        if inlier_count > best_inlier_count and inlier_count >= min_inliers:
+            best_inlier_count = inlier_count
+            best_normal = normal
+            best_point = p1
+            best_inlier_mask = inlier_mask
+
+    if best_normal is None:
+        # 拟合失败，返回默认
+        return np.array([0, 0, 1]), np.zeros(3), np.zeros(N, dtype=bool)
+
+    # 可选：用所有内点再拟合一次平面（最小二乘），提升精度
+    inlier_points = pc[best_inlier_mask]
+    centroid = np.mean(inlier_points, axis=0)
+    cov = np.cov(inlier_points - centroid, rowvar=False)
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    refined_normal = eigvecs[:, 0]
+    if refined_normal[2] < 0:
+        refined_normal = -refined_normal
+
+    print(f"est height: {centroid[2]:.3f} m, normal: {refined_normal}")
+    return refined_normal, centroid, best_inlier_mask
 def get_workspace_mask_height(
     pc_world: np.ndarray,
     z_percentile_threshold: float = 85,
