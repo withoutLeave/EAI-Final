@@ -17,7 +17,7 @@ def get_workspace_mask_height(
     pc_world: np.ndarray,
     z_percentile_threshold: float = 85,
     height_above_table: float = 0.02,
-    max_height_above_table: float = 0.10,
+    max_height_above_table: float = 0.12,
     min_object_points: int = 50
 ) -> np.ndarray:
     """

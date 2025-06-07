@@ -25,7 +25,7 @@ import traceback
 from src.vis import Vis
 
 COORD_MODEL_DIR = "./models/est_coord/checkpoint_21500.pth"
-COORD_MODEL_DIR =""
+# COORD_MODEL_DIR =""
 POSE_MODEL_DIR = "./models/est_pose/checkpoint_24000.pth"
 POSE_MODEL = None
 COORD_MODEL = None
