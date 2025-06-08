@@ -8,8 +8,13 @@ from scipy.spatial.transform import Rotation as R
 from src.vis import Vis
 from src.type import Grasp
 from src.utils import to_pose, rot_dist
-from src.sim.wrapper_env import WrapperEnvConfig, WrapperEnv
-from src.sim.wrapper_env import get_grasps
+if True:
+    from src.real.wrapper_env import WrapperEnvConfig, WrapperEnv
+    from src.real.wrapper_env import get_grasps
+else:
+    from src.sim.wrapper_env import WrapperEnvConfig, WrapperEnv
+    from src.sim.wrapper_env import get_grasps
+
 from src.test.load_test import load_test_data
 from src.robot.cfg import get_robot_cfg
 
